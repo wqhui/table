@@ -4,6 +4,7 @@ import { always } from '../../utils/others'
 import StrictTreeDataHelper from '../../utils/tree-data-helpers/StrictTreeDataHelper'
 import TreeDataHelper from '../../utils/tree-data-helpers/TreeDataHelper'
 import { TablePipeline } from '../pipeline'
+import { internals } from '../../internals'
 
 export interface TreeSelectFeatureOptions {
   /** 完整的树 */
@@ -55,6 +56,7 @@ export interface TreeSelectFeatureOptions {
 }
 
 const STATE_KEY = 'treeSelect'
+const treeRootSymbol = Symbol('tree-root')
 
 export function treeSelect (opts: TreeSelectFeatureOptions) {
   return function treeSelectStep (pipeline: TablePipeline) {
@@ -62,17 +64,15 @@ export function treeSelect (opts: TreeSelectFeatureOptions) {
     if (Checkbox == null) {
       throw new Error('使用 treeSelect 之前需要通过 pipeline context 设置 components.Checkbox')
     }
-    const primaryKey = pipeline.ensurePrimaryKey('treeSelect') as string
-    if (typeof primaryKey !== 'string') {
-      throw new Error('treeSelect 仅支持字符串作为 primaryKey')
-    }
+    const primaryKey = pipeline.ensurePrimaryKey('treeSelect')
+
     const clickArea = opts.clickArea ?? 'checkbox'
     const isDisabled = opts.isDisabled ?? always(false)
     const isDetached = opts.idDetached ?? always(false)
 
     const value = opts.value ?? pipeline.getStateAtKey(STATE_KEY) ?? opts.defaultValue ?? []
-    const tree = opts.rootKey != null ? [{ [primaryKey]: opts.rootKey, children: opts.tree }] : opts.tree
-    const getNodeValue = (node: any) => node[primaryKey]
+    const tree = opts.rootKey != null ? [{ [treeRootSymbol]: opts.rootKey, children: opts.tree }] : opts.tree
+    const getNodeValue = (node: any) => node[treeRootSymbol] ?? internals.safeGetRowKey(primaryKey, node, -1)
 
     const treeDataHelper = opts.checkStrictly
       ? new StrictTreeDataHelper({ value, getNodeValue, tree })
@@ -108,10 +108,10 @@ export function treeSelect (opts: TreeSelectFeatureOptions) {
       title: opts.rootKey != null ? makeCheckbox(opts.rootKey, true) : undefined,
       ...opts.checkboxColumn,
       render(value, record) {
-        return makeCheckbox(record[primaryKey], false, record)
+        return makeCheckbox(internals.safeGetRowKey(primaryKey, record, -1), false, record)
       },
       getCellProps(value: any, row: any): CellProps {
-        const rowKey = row[primaryKey]
+        const rowKey = internals.safeGetRowKey(primaryKey, row, -1)
         if (clickArea !== 'cell') {
           return
         }
@@ -152,7 +152,7 @@ export function treeSelect (opts: TreeSelectFeatureOptions) {
               if (opts.stopClickEventPropagation) {
                 e.stopPropagation()
               }
-              onToggleKey(row[primaryKey])
+              onToggleKey(internals.safeGetRowKey(primaryKey, row, -1))
             },
           }
         }
@@ -161,7 +161,7 @@ export function treeSelect (opts: TreeSelectFeatureOptions) {
 
     if (opts.highlightRowWhenSelected) {
       pipeline.appendRowPropsGetter((row) => {
-        if (treeDataHelper.isChecked(row[primaryKey])) {
+        if (treeDataHelper.isChecked(internals.safeGetRowKey(primaryKey, row, -1))) {
           return { className: 'highlight' }
         }
       })
